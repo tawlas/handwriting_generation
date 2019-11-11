@@ -1,0 +1,28 @@
+{
+  "Description" :  "Conditional Generation",
+  "StrokesFile" : "data/strokes-py3.npy",
+  "SentencesFile" : "data/sentences.txt",
+  "ModelDir" : "conditional_generation/ModelParameters",
+  "LogsDir" : "conditional_generation/Logs",
+  "TrainSplit" : 0.9,
+  "ValSplit" : 0.1,
+  "NetworkSpecs" : {
+    "HiddenDim" : 4,
+    "InputDim" : 3,
+    "OutputDim" : 3,
+    "WindowParameterDim" : 3,
+    "NumLayersLSTM" : 1,
+    "Dropout": 0.3
+    },
+  "NumTimestep" : 100,
+  "NumEpochs" : 600,
+  "CheckpointFrequency" : 20,
+  "LogFrequency" : 5,
+  "BatchSize" : 64,
+  "GradClip" : 2,
+  "LearningRate" : 0.0001,
+  "eval" : {
+
+    "ModelPath" : "../conditional_generation/cgm.pt"
+  }
+}

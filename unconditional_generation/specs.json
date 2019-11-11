@@ -1,0 +1,26 @@
+{
+  "Description" :  "Random Generation",
+  "DataPath" : "data/strokes-py3.npy",
+  "ModelDir" : "unconditional_generation/ModelParameters",
+  "LogsDir" : "unconditional_generation/Logs",
+  "TrainSplit" : 0.8,
+  "ValSplit" : 0.2,
+  "NetworkSpecs" : {
+    "HiddenDim" : 10,
+    "InputDim" : 3,
+    "OutputDim" : 3,
+    "NumLayersLSTM" : 1,
+    "Dropout" : 0.3
+    },
+  "NumEpochs" : 2001,
+  "CheckpointFrequency" : 100,
+  "LogFrequency" : 50,
+  "BatchSize" : 64,
+  "GradClip" : 3,
+  "LearningRate" : 0.00001,
+  "eval" : {
+    "ModelPath": "../unconditional_generation/ugm.pt",
+    "StrokeMaxLength": 700,
+    "StrokeMinLength": 200
+  }
+}
