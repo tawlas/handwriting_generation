@@ -48,7 +48,7 @@ Warning: You may need to modify path files in the "specs.json" files of the mode
 	To see the plotting of the loss (during or after training time), run :
 
 	 ```Shell
-	python3 plot_log.py.py -e unconditionl_generation
+	python3 plot_log.py.py -e conditionl_generation
 	```
 
 ### Generating conditioned stroke
