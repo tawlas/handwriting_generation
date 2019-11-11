@@ -7,7 +7,7 @@ Author: Alassane Watt at [JRL-Lab](http://jrl-umi3218.github.io/) at AIST Tsukub
 Each model and its dependencies are gathered in a specific folder (conditional_generation and unconditional_generation)
 In each of those folders, you will find a specs.json file that contains the parameters of the corresponding model.
 
-Warning: You may need to modify path files in the "specs.json" files of the models since they are set for launching in notebooks (results in notebook flder) which are not in the root of this project.
+Warning: You may need to modify path files in the "specs.json" files of the models since they are set for launching in notebooks (results in notebook folder) which are not in the root of this project.
 
 ### Training the random genration model
 
@@ -20,7 +20,7 @@ Warning: You may need to modify path files in the "specs.json" files of the mode
 	To see the plotting of the loss (during or after training time), run :
 
 	 ```Shell
-	python3 plot_log.py.py -e unconditionl_generation
+	python3 plot_log.py -e unconditionl_generation
 	```
 
 ### Generating random stroke
@@ -48,7 +48,7 @@ Warning: You may need to modify path files in the "specs.json" files of the mode
 	To see the plotting of the loss (during or after training time), run :
 
 	 ```Shell
-	python3 plot_log.py.py -e conditionl_generation
+	python3 plot_log.py -e conditionl_generation
 	```
 
 ### Generating conditioned stroke
