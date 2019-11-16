@@ -23,17 +23,8 @@ class LSTM(nn.Module):
         self.dropout = dropout
     
     def forward(self, x, h):
-        # Packing the sequences
-        x = rnn_utils.pack_sequence(x)
-
         x, h = self.lstm(x, h)
-        x, batch_len = rnn_utils.pad_packed_sequence(x, padding_value=np.inf, batch_first=True)
-
-        # Unpacking them now (sequences)
-        unpacked = []
-        for k in range(len(x)):
-            unpacked.append(x[k][:batch_len[k]])
-        x = torch.cat(unpacked).contiguous().view(-1, self.hidden_dim)
+        x = x.contiguous()
         x = self.dropout_layer(x)
         x = self.fc(x)
         return x, h
@@ -43,12 +34,8 @@ class LSTM(nn.Module):
         # Create two new tensors with sizes n_layers x batch_size x hidden_dim,
         # initialized to zero, for hidden state and cell state of LSTM
         weight = next(self.parameters()).data
-        if use_cuda:
-            hidden = (weight.new(self.n_layers, batch_size, self.hidden_dim).zero_().cuda(),
-                    weight.new(self.n_layers, batch_size, self.hidden_dim).zero_().cuda())
-        else:
-            hidden = (weight.new(self.n_layers, batch_size, self.hidden_dim).zero_(),
-                    weight.new(self.n_layers, batch_size, self.hidden_dim).zero_())
+        hidden = (weight.new(self.n_layers, batch_size, self.hidden_dim).zero_(),
+                weight.new(self.n_layers, batch_size, self.hidden_dim).zero_())
         
         return hidden
     

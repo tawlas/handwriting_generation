@@ -6,7 +6,10 @@ import matplotlib.pyplot as plt
 import os
 import utils.workspace as ws
 
-use_cuda = torch.cuda.is_available()
+if torch.cuda.is_available():
+    device = torch.device("cuda")
+else:
+    device = torch.device("cpu")
 
 # Model definition
 class LSTM(nn.Module):
@@ -29,45 +32,48 @@ class LSTM(nn.Module):
     #use broadcasting for cleaner code
     def compute_soft_window(self, h, sentences, prev_p=None):
         K = self.window_parameter_dim
+        sentences = sentences.to(device)
         if type(prev_p) == type(None):
-            prev_p = torch.zeros(h.size(0), 3*K)
-            if use_cuda:
-                prev_p = prev_p.cuda()
+            prev_p = torch.zeros(h.size(0), 3*K).to(device)
         # This machinery is for getting around in_place operation which destroy coherent backpropagation
         intermediate_p = torch.exp(self.fc1(h.float()))
         p_first = intermediate_p[:,:2*K]
         p_last = intermediate_p[:,2*K:] - prev_p[:, 2*K:]
         p = torch.cat([p_first, p_last], dim=-1)
-
+        p = p.unsqueeze(1)
         alpha, beta, kappa = torch.split(p, K, -1)
-        all_wt = []
-        for i in range(len(sentences)):
-            c = sentences[i]
-            u = torch.ones(c.size(0), alpha.size(-1))
-            if use_cuda:
-                c = c.cuda()
-                u = u.cuda()
-            for k in range(c.size(0)):
-                u[k] *= k+1
-            phi = torch.zeros(c.size(0), alpha.size(-1))
-            if use_cuda:
-                phi = phi.cuda()
-            for k in range(phi.size(0)):
-                phi[k] = alpha[i]*torch.exp(-beta[i]*(kappa[i]-u[k])**2)
-            phi = torch.sum(phi, dim=-1)
-            wt = phi.matmul(c)
-            all_wt.append(wt) 
-        soft_window = torch.stack(all_wt)
+        u = torch.arange(1, sentences.size(1)).unsqueeze(-1).to(device)
+        phi = alpha*torch.exp(-beta*(kappa-u)**2)
+        phi = phi.sum(dim=-1)
+        phi = phi.unsqueeze(-1)
+        soft_window = phi*sentences
+        soft_window = soft_window.sum(1)
 
-        return  soft_window, p
+        # all_wt = []
+        # for i in range(len(sentences)):
+        #     c = sentences[i]
+        #     u = torch.ones(c.size(0), alpha.size(-1))
+        #     if use_cuda:
+        #         c = c.cuda()
+        #         u = u.cuda()
+        #     for k in range(c.size(0)):
+        #         u[k] *= k+1
+        #     phi = torch.zeros(c.size(0), alpha.size(-1))
+        #     if use_cuda:
+        #         phi = phi.cuda()
+        #     for k in range(phi.size(0)):
+        #         phi[k] = alpha[i]*torch.exp(-beta[i]*(kappa[i]-u[k])**2)
+        #     phi = torch.sum(phi, dim=-1)
+        #     wt = phi.matmul(c)
+        #     all_wt.append(wt) 
+        # soft_window = torch.stack(all_wt)
+
+        return  soft_window, p.squeeze(1)
 
     def forward(self, x, sentences, h1, h2):
         p = None
-        hx = torch.zeros(h1[0].size(0), x.size(1), h1[0].size(-1))
-        all_windows = torch.zeros(h1[0].size(0), x.size(1), self.csl)
-        if use_cuda:
-                all_windows = all_windows.cuda()
-                hx = hx.cuda()
+        hx = torch.zeros(h1[0].size(0), x.size(1), h1[0].size(-1)).to(device)
+        all_windows = torch.zeros(h1[0].size(0), x.size(1), self.csl).to(device)
         
         for k in range(x.size(1)):
             x_t = x[:, k, :]
@@ -89,12 +95,9 @@ class LSTM(nn.Module):
         # Create two new tensors with sizes n_layers x batch_size x hidden_dim,
         # initialized to zero, for hidden state and cell state of LSTM
         weight = next(self.parameters()).data
-        if use_cuda:
-            hidden = (weight.new(self.n_layers, batch_size, self.hidden_dim).zero_().cuda(),
-                    weight.new(self.n_layers, batch_size, self.hidden_dim).zero_().cuda())
-        else:
-            hidden = (weight.new(self.n_layers, batch_size, self.hidden_dim).zero_(),
-                    weight.new(self.n_layers, batch_size, self.hidden_dim).zero_())
+        hidden = (weight.new(self.n_layers, batch_size, self.hidden_dim).zero_().to(device),
+                weight.new(self.n_layers, batch_size, self.hidden_dim).zero_().to(device))
+
         return hidden
         
     def dataloader(self, dataset, batch_size):

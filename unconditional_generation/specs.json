@@ -9,6 +9,7 @@
     "HiddenDim" : 10,
     "InputDim" : 3,
     "OutputDim" : 3,
+    "ParamDim" : 10,
     "NumLayersLSTM" : 1,
     "Dropout" : 0.3
     },

@@ -7,23 +7,44 @@ import os
 import utils.workspace as ws
 from utils.workspace import normalize
 from unconditional_generation.generate_unconditionnally import LSTM as lstm
+import preprocess_ugm.Preprocess as Preprocess
 
 # Loss functions
 def loss_function(y_pred, y_true):
-    
-        lift_true = y_true[:, 0]
-        lift_pred = y_pred[:, 0]
-        lift_loss = nn.BCEWithLogitsLoss()(lift_pred, lift_true)
-        l1_loss = nn.L1Loss()(y_pred[:, 1:] , y_true[:, 1:])
-        loss = lift_loss + l1_loss
-        return loss
+    # make sure down that x1 is of shape b*seq*1
+    param_dim = net_specs["ParamDim"]
+    pi, mu1, mu2, sigma1, sigma2, rho, pred_e = y_pred.split(6, dim=-1)
+    pred_e.squeeze()
+    pi = nn.functional.softmax(pi, dim=-1)
+    sigma1 = torch.exp(sigma1)
+    sigma2 = torch.exp(sigma2)
+    rho = torch.tanh(rho)
+
+    end_stroke, x1, x2 = y_true.split(1, dim=-1)
+    end_stroke.squeeze()
+    x1 = x1.expand_as(mu1)
+    x2 = x2.expand_as(mu2)
+
+    Z = (x1-mu1)**2/sigma1**2 + (x2-mu2)**2/sigma2**2 - 2*rho*(x1-mu1)*(x2-mu2)/(sigma1*sigma2)
+    from_z = torch.exp(-0.5*Z/(1-rho**2))
+    from_rho = 1/torch.sqrt(1-rho**2)
+    from_sigma = 0.5/np.pi*sigma1*sigma2
+    gaussian = from_sigma*from_rho*from_z
+    #loss = pi*guassian*
+
+    lift_loss = nn.BCEWithLogitsLoss()(lift_pred, lift_true)
+    l1_loss = nn.L1Loss()(y_pred[:, 1:] , y_true[:, 1:])
+    loss = lift_loss + l1_loss
+    return loss
 
 def main(experiment_directory, continue_from):
     
     use_cuda = torch.cuda.is_available()
     if use_cuda:
+        device = torch.device("cuda")
         print("Training on GPU")
     else:
+        device = torch.device("cpu")
         print("Training on CPU")
 
     specs = ws.load_experiment_specifications(experiment_directory)
@@ -31,39 +52,47 @@ def main(experiment_directory, continue_from):
     # Loading the dataset
     datapath = specs["DataPath"]
     strokes = np.load(datapath, allow_pickle=True)
-    # Shuffle the dataset
-    np.random.seed(1)
-    np.random.shuffle(strokes)
 
-    # Splitting the dataset
+    # Preprocessing the dataset
     train_split = specs["TrainSplit"]
     val_split = specs["ValSplit"]
-    train_set, val_set = ws.split_dataset(strokes, train_split, val_split)
-    train_set = np.array(sorted(train_set, key=len, reverse=True))
-    val_set = np.array(sorted(val_set, key=len, reverse=True))
+    preprocess = Preprocess(strokes, train_split, val_split)
+    train_set = preprocess.train_set.to(device)
+    val_set = preprocess.val_set.to(device)
 
-    print("Training set: {}\nValidation set: {}".format(len(train_set), len(val_set)))
+    # # Shuffle the dataset
+    # np.random.seed(1)
+    # np.random.shuffle(strokes)
 
-    #normalize x and y coordinates to 0 mean and 1 std
-    normalize(train_set)
-    normalize(val_set)
+    # # Splitting the dataset
+    # train_split = specs["TrainSplit"]
+    # val_split = specs["ValSplit"]
+    # train_set, val_set = ws.split_dataset(strokes, train_split, val_split)
+    # train_set = np.array(sorted(train_set, key=len, reverse=True))
+    # val_set = np.array(sorted(val_set, key=len, reverse=True))
 
-    # From numpy arrays to pytorch tensors
-    dataset = [train_set, val_set]
-    for k in range(len(dataset)):
-        dataset[k] = [torch.from_numpy(x) for x in dataset[k]]
-        train_set, val_set = tuple(dataset)
+    # print("Training set: {}\nValidation set: {}".format(len(train_set), len(val_set)))
+
+    # #normalize x and y coordinates to 0 mean and 1 std
+    # normalize(train_set)
+    # normalize(val_set)
+
+    # # From numpy arrays to pytorch tensors
+    # dataset = [train_set, val_set]
+    # for k in range(len(dataset)):
+    #     dataset[k] = [torch.from_numpy(x) for x in dataset[k]]
+    #     train_set, val_set = tuple(dataset)
 
     #Instantiating the model
     net_specs = specs["NetworkSpecs"]
     input_dim = net_specs["InputDim"]
     hidden_dim = net_specs["HiddenDim"]
     n_layers = net_specs["NumLayersLSTM"]
-    output_dim = net_specs["OutputDim"]
+    # output_dim = net_specs["OutputDim"]
+    output_dim = 1 + 6*net_specs["ParamDim"]
     dropout = net_specs["Dropout"]
     model = lstm(input_dim=input_dim, hidden_dim=hidden_dim, n_layers=n_layers, output_dim=output_dim, dropout=dropout)
-    if use_cuda:
-        model = model.cuda()
+    model = model.to(device)
 
     # training parameters optimization function
     lr=specs["LearningRate"]
@@ -116,18 +145,17 @@ def train(model, train_set, val_set,start_epoch, epochs, batch_size, optimizer, 
         print("epoch: ", epoch)
         # initialize hidden state
         model.train()
-        h = model.init_hidden(batch_size)
+        h = model.init_hidden(batch_size).to(device)
+        h = (each.to(device) for each in h)
 
         # Looping the whole dataset
         for inputs in model.dataloader(train_set, batch_size):
-            if use_cuda:
-                inputs = [x.cuda() for x in inputs]
+            # inputs = [x.to(device) for x in inputs]
 
-            labels = [torch.zeros_like(k) for k in inputs]
+            labels = torch.zeros_like(inputs)
             for i in range(len(labels)):
                 labels[i][:-1, :] = inputs[i][1:, :]
                 labels[i][-1, :] = inputs[i][0, :]
-            labels = torch.cat(labels)
 
             # Creating new variables for the hidden state, otherwise
             # we'd backprop through the entire training history
@@ -136,6 +164,17 @@ def train(model, train_set, val_set,start_epoch, epochs, batch_size, optimizer, 
             # zero accumulated gradients
             model.zero_grad()
             output, h = model(inputs, h)
+
+
+
+
+
+
+
+
+
+
+
 
             # calculate the loss and perform backprop
             loss = loss_function(output, labels)
@@ -148,15 +187,13 @@ def train(model, train_set, val_set,start_epoch, epochs, batch_size, optimizer, 
 
         # Get validation loss
         val_h = model.init_hidden(batch_size)
+        val_h = (each.to(device) for each in val_h)
         model.eval()
         for val_inputs in model.dataloader(val_set, batch_size):
-            if use_cuda:
-                val_inputs = [x.cuda() for x in val_inputs]
-            val_labels = [torch.zeros_like(k) for k in val_inputs]
+            val_labels = torch.zeros_like(val_inputs)
             for i in range(len(val_labels)):
                 val_labels[i][:-1, :] = val_inputs[i][1:, :]
                 val_labels[i][-1, :] = val_inputs[i][0, :]
-            val_labels = torch.cat(val_labels)
 
             # Creating new variables for the hidden state, otherwise
             # we'd backprop through the entire training history
@@ -168,7 +205,6 @@ def train(model, train_set, val_set,start_epoch, epochs, batch_size, optimizer, 
         val_loss_log.append(epoch_val_loss/len(val_set))
 
         model.train()
-
 
         if epoch in checkpoints:
             model.save_model(model_params_dir, str(epoch)+".pth", epoch)
