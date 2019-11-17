@@ -15,10 +15,10 @@
     },
   "NumEpochs" : 2001,
   "CheckpointFrequency" : 100,
-  "LogFrequency" : 50,
+  "LogFrequency" : 5,
   "BatchSize" : 64,
   "GradClip" : 3,
-  "LearningRate" : 0.00001,
+  "LearningRate" : 0.0001,
   "eval" : {
     "ModelPath": "../unconditional_generation/ugm.pt",
     "StrokeMaxLength": 700,

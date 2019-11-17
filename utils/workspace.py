@@ -68,13 +68,17 @@ def clip_logs(loss_log, val_loss_log, epoch):
 
 #normalize x and y coordinates to 0 mean 1 std
 def normalize(data):
-    data_concat = np.concatenate(data, axis=0)
-    means = np.mean(data_concat, axis=0)
-    stds = np.std(data_concat, axis=0)
+    means = np.mean(data, axis=(0,1))
+    stds = np.std(data, axis=(0,1))
     x_mean = means[1]
     y_mean = means[2]
     x_std = stds[1]
     y_std = stds[2]
-    for element in data:
-        element[:,1] = (element[:,1] - x_mean) / x_std
-        element[:,2] = (element[:,2] - y_mean) / y_std
+    data[:,:,1] =  (data[:,:,1] - x_mean) / x_std
+    data[:,:,2] =  (data[:,:,2] - y_mean) / y_std
+    print("mean", np.mean(data[:,:,1]), np.std(data[:,:,1]) )
+    stop
+
+    # for element in data:
+    #     element[:,1] = (element[:,1] - x_mean) / x_std
+    #     element[:,2] = (element[:,2] - y_mean) / y_std

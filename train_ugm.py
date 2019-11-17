@@ -7,34 +7,53 @@ import os
 import utils.workspace as ws
 from utils.workspace import normalize
 from unconditional_generation.generate_unconditionnally import LSTM as lstm
-import preprocess_ugm.Preprocess as Preprocess
+from preprocess_ugm import Preprocess as Preprocess
 
 # Loss functions
 def loss_function(y_pred, y_true):
     # make sure down that x1 is of shape b*seq*1
+    # print(y_pred)
+    # print(y_true)
+
     param_dim = net_specs["ParamDim"]
-    pi, mu1, mu2, sigma1, sigma2, rho, pred_e = y_pred.split(6, dim=-1)
-    pred_e.squeeze()
+    pi, mu1, mu2, sigma1, sigma2, rho, pred_e_hat = y_pred.split(param_dim, dim=-1)
+    pred_e = 1/(1+torch.exp(pred_e_hat))
     pi = nn.functional.softmax(pi, dim=-1)
     sigma1 = torch.exp(sigma1)
     sigma2 = torch.exp(sigma2)
     rho = torch.tanh(rho)
 
     end_stroke, x1, x2 = y_true.split(1, dim=-1)
-    end_stroke.squeeze()
-    x1 = x1.expand_as(mu1)
-    x2 = x2.expand_as(mu2)
+    # x1 = x1.expand_as(mu1)
+    # x2 = x2.expand_as(mu2)
 
-    Z = (x1-mu1)**2/sigma1**2 + (x2-mu2)**2/sigma2**2 - 2*rho*(x1-mu1)*(x2-mu2)/(sigma1*sigma2)
+    Z = ((x1-mu1)**2)/(sigma1**2) + ((x2-mu2)**2)/(sigma2**2) - (2*rho*(x1-mu1)*(x2-mu2))/(sigma1*sigma2)
+    #Since loss is blowing because of z i devide it by 1000
+    Z = Z / 1000
     from_z = torch.exp(-0.5*Z/(1-rho**2))
+    print("mm", from_z.min())
     from_rho = 1/torch.sqrt(1-rho**2)
-    from_sigma = 0.5/np.pi*sigma1*sigma2
+    from_sigma = 0.5/(np.pi*sigma1*sigma2)
     gaussian = from_sigma*from_rho*from_z
-    #loss = pi*guassian*
+    mask_e1 = end_stroke == 1
+    mask_e2 = end_stroke == 0
+    from_e1 = pred_e*mask_e1
+    from_e2 = 1 - pred_e
+    from_e2 = from_e2*mask_e2
+    from_e = from_e1 + from_e2
+    # from_e = from_e.expand_as(pi)
 
-    lift_loss = nn.BCEWithLogitsLoss()(lift_pred, lift_true)
-    l1_loss = nn.L1Loss()(y_pred[:, 1:] , y_true[:, 1:])
-    loss = lift_loss + l1_loss
+    bivariate_loss = pi*gaussian*from_e
+    bivariate_loss = torch.mean(bivariate_loss, dim=-1)
+    
+    bivariate_loss = torch.mean(-torch.log(bivariate_loss))
+    # print("min", Z.max())
+    # bivariate_loss = torch.mean(-torch.log(bivariate_loss)/bivariate_loss.size(-1))
+    end_stroke_loss = nn.BCEWithLogitsLoss()(pred_e_hat.squeeze(), end_stroke.squeeze())
+    # print(bivariate_loss)
+    # print(end_stroke_loss)
+    loss = end_stroke_loss + bivariate_loss
+    # print(loss)
     return loss
 
 def main(experiment_directory, continue_from):
@@ -59,7 +78,7 @@ def main(experiment_directory, continue_from):
     preprocess = Preprocess(strokes, train_split, val_split)
     train_set = preprocess.train_set.to(device)
     val_set = preprocess.val_set.to(device)
-
+    # print("",train_set)
     # # Shuffle the dataset
     # np.random.seed(1)
     # np.random.shuffle(strokes)
@@ -84,6 +103,7 @@ def main(experiment_directory, continue_from):
     #     train_set, val_set = tuple(dataset)
 
     #Instantiating the model
+    global net_specs
     net_specs = specs["NetworkSpecs"]
     input_dim = net_specs["InputDim"]
     hidden_dim = net_specs["HiddenDim"]
@@ -134,18 +154,18 @@ def main(experiment_directory, continue_from):
 
     print("Starting training")
     train(model, train_set, val_set, start_epoch, epochs, batch_size, optimizer,
-        clip, log_frequency, logs_dir, model_params_dir, checkpoints, loss_log, val_loss_log, use_cuda)
+        clip, log_frequency, logs_dir, model_params_dir, checkpoints, loss_log, val_loss_log, device)
 
 
 def train(model, train_set, val_set,start_epoch, epochs, batch_size, optimizer, clip, log_frequency, 
-    logs_dir, model_params_dir, checkpoints, loss_log, val_loss_log, use_cuda=False):
+    logs_dir, model_params_dir, checkpoints, loss_log, val_loss_log, device):
     for epoch in range(start_epoch, epochs+1):
         epoch_loss = 0
         epoch_val_loss = 0
         print("epoch: ", epoch)
         # initialize hidden state
         model.train()
-        h = model.init_hidden(batch_size).to(device)
+        h = model.init_hidden(batch_size)
         h = (each.to(device) for each in h)
 
         # Looping the whole dataset
@@ -165,17 +185,6 @@ def train(model, train_set, val_set,start_epoch, epochs, batch_size, optimizer, 
             model.zero_grad()
             output, h = model(inputs, h)
 
-
-
-
-
-
-
-
-
-
-
-
             # calculate the loss and perform backprop
             loss = loss_function(output, labels)
             epoch_loss += loss.item()
@@ -183,6 +192,7 @@ def train(model, train_set, val_set,start_epoch, epochs, batch_size, optimizer, 
             # `clip_grad_norm` helps prevent the exploding gradient problem.
             nn.utils.clip_grad_norm_(model.parameters(), clip)
             optimizer.step()
+        # print(epoch_loss)
         loss_log.append(epoch_loss/len(train_set))
 
         # Get validation loss
